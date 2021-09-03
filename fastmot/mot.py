@@ -9,15 +9,11 @@ from .tracker import MultiTracker
 from .utils import Profiler
 from .utils.visualization import Visualizer
 
-
 LOGGER = logging.getLogger(__name__)
-
-
 class DetectorType(Enum):
     SSD = 0
     YOLO = 1
     PUBLIC = 2
-
 
 class MOT:
     def __init__(self, size,
@@ -29,7 +25,8 @@ class MOT:
                  feature_extractor_cfg=None,
                  tracker_cfg=None,
                  visualizer_cfg=None,
-                 draw=False):
+                 draw=False,
+                 number_of_trackers=1):
         """Top level module that integrates detection, feature extraction,
         and tracking together.
 
@@ -62,6 +59,8 @@ class MOT:
         self.detector_frame_skip = detector_frame_skip
         self.draw = draw
 
+        self.number_of_trackers = number_of_trackers
+
         if ssd_detector_cfg is None:
             ssd_detector_cfg = SimpleNamespace()
         if yolo_detector_cfg is None:
@@ -86,10 +85,18 @@ class MOT:
 
         LOGGER.info('Loading feature extractor model...')
         self.extractor = FeatureExtractor(**vars(feature_extractor_cfg))
-        self.tracker = MultiTracker(self.size, self.extractor.metric, **vars(tracker_cfg))
 
-        self.visualizer = Visualizer(**vars(visualizer_cfg))
-        self.frame_count = 0
+        #self.tracker = MultiTracker(self.size, self.extractor.metric, **vars(tracker_cfg))
+        self.trackers = []
+        self.frame_counts = []
+        self.visualizers = []
+        for i in range(self.number_of_trackers):
+            self.trackers.append(MultiTracker(self.size, self.extractor.metric, **vars(tracker_cfg)))
+            self.frame_counts.append(0)
+            self.visualizers.append(Visualizer(**vars(visualizer_cfg))) 
+
+        #self.visualizer = Visualizer(**vars(visualizer_cfg))
+        #self.frame_count = 0
 
     def visible_tracks(self):
         """Retrieve visible tracks from the tracker
@@ -99,10 +106,13 @@ class MOT:
         Iterator[Track]
             Confirmed and active tracks from the tracker.
         """
-        return (track for track in self.tracker.tracks.values()
-                if track.confirmed and track.active)
+        visible_tracks = []
+        for i in range(self.number_of_trackers):
+            visible_tracks.append(track for track in self.trackers[i].tracks.values() if track.confirmed and track.active)
+        return visible_tracks
 
-    def reset(self, cap_dt):
+    #should I add multiple cap_dt or not???????????
+    def reset(self, *streams):
         """Resets multiple object tracker. Must be called before `step`.
 
         Parameters
@@ -110,10 +120,12 @@ class MOT:
         cap_dt : float
             Time interval in seconds between each frame.
         """
-        self.frame_count = 0
-        self.tracker.reset(cap_dt)
+        self.frame_counts = []
+        for i in range(self.number_of_trackers):
+            self.trackers[i].reset(streams[i].cap_dt)
+            self.frame_counts.append(0)
 
-    def step(self, frame):
+    def step(self, *frames):
         """Runs multiple object tracker on the next frame.
 
         Parameters
@@ -121,35 +133,41 @@ class MOT:
         frame : ndarray
             The next frame.
         """
-        detections = []
-        if self.frame_count == 0:
-            detections = self.detector(frame)
-            self.tracker.init(frame, detections)
-        else:
-            if self.frame_count % self.detector_frame_skip == 0:
-                with Profiler('preproc'):
-                    self.detector.detect_async(frame)
+        ##assuming number of frames and number of trackers are equal!!!!!!!!!!!!!!!!!!!!!!
+    
+        for i in range(len(frames)):
+            frame = frames[i]
+            if frame is not None:
+                detections = []
+                if self.frame_counts[i] == 0:
+                    detections = self.detector(frames[i])
+                    self.trackers[i].init(frames[i], detections)
+                else:
+                    if self.frame_counts[i] % self.detector_frame_skip == 0:
+                        with Profiler('preproc'):
+                            self.detector.detect_async(frames[i])
 
-                with Profiler('detect'):
-                    with Profiler('track'):
-                        self.tracker.compute_flow(frame)
-                    detections = self.detector.postprocess()
+                        with Profiler('detect'):
+                            with Profiler('track'):
+                                self.trackers[i].compute_flow(frames[i])
+                            detections = self.detector.postprocess()
 
-                with Profiler('extract'):
-                    self.extractor.extract_async(frame, detections.tlbr)
-                    with Profiler('track', aggregate=True):
-                        self.tracker.apply_kalman()
-                    embeddings = self.extractor.postprocess()
+                        with Profiler('extract'):
+                            self.extractor.extract_async(frames[i], detections.tlbr)
+                            with Profiler('track', aggregate=True):
+                                self.trackers[i].apply_kalman()
+                            embeddings = self.extractor.postprocess()
 
-                with Profiler('assoc'):
-                    self.tracker.update(self.frame_count, detections, embeddings)
-            else:
-                with Profiler('track'):
-                    self.tracker.track(frame)
+                        with Profiler('assoc'):
+                            self.trackers[i].update(self.frame_counts[i], detections, embeddings)
+                    else:
+                        with Profiler('track'):
+                            self.trackers[i].track(frames[i])
 
-        if self.draw:
-            self._draw(frame, detections)
-        self.frame_count += 1
+                if self.draw:
+                    self._draw(frames[i], detections, i)
+
+                self.frame_counts[i] += 1
 
     @staticmethod
     def print_timing_info():
@@ -161,9 +179,9 @@ class MOT:
                      f"{Profiler.get_avg_millis('extract'):>6.3f} ms")
         LOGGER.debug(f"{'association time:':<37}{Profiler.get_avg_millis('assoc'):>6.3f} ms")
 
-    def _draw(self, frame, detections):
-        visible_tracks = list(self.visible_tracks())
-        self.visualizer.render(frame, visible_tracks, detections, self.tracker.klt_bboxes.values(),
-                               self.tracker.flow.prev_bg_keypoints, self.tracker.flow.bg_keypoints)
+    def _draw(self, frame, detections, tracker_id):
+        visible_tracks = list(self.visible_tracks()[tracker_id])
+        self.visualizers[tracker_id].render(frame, visible_tracks, detections, self.trackers[tracker_id].klt_bboxes.values(),
+                               self.trackers[tracker_id].flow.prev_bg_keypoints, self.trackers[tracker_id].flow.bg_keypoints)
         cv2.putText(frame, f'visible: {len(visible_tracks)}', (30, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, 0, 2, cv2.LINE_AA)
