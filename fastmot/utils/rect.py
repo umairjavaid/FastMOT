@@ -46,9 +46,24 @@ def to_tlwh(tlbr):
 
 
 @nb.njit(cache=True, inline='always')
+def to_tlbr_yolov5(tlwh):
+    tlbr = np.empty(4)
+    #print("tlwh: ",tlwh)
+    xmin = float(tlwh[0] - (tlwh[2]/2))
+    #print("float(tlwh[0]) - float(tlwh[2]/2): ",xmin)
+    ymin = float(tlwh[1] - (tlwh[3]/2))
+    tlbr[0] = round(xmin, 0) 
+    tlbr[1] = round(ymin, 0)
+    tlbr[2] = round(xmin + float(tlwh[2]) - 1., 0)
+    tlbr[3] = round(ymin + float(tlwh[3]) - 1., 0)
+    return tlbr
+
+@nb.njit(cache=True, inline='always')
 def to_tlbr(tlwh):
     tlbr = np.empty(4)
+    #print("float(tlwh[0]): ",float(tlwh[0]))
     xmin = float(tlwh[0])
+    #print("float(tlwh[0]) - float(tlwh[2]/2): ",xmin)
     ymin = float(tlwh[1])
     tlbr[0] = round(xmin, 0)
     tlbr[1] = round(ymin, 0)
