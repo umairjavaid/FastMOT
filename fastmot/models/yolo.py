@@ -2,7 +2,7 @@ from pathlib import Path
 import logging
 import numpy as np
 import tensorrt as trt
-
+import ctypes
 
 EXPLICIT_BATCH = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 LOGGER = logging.getLogger(__name__)
@@ -162,7 +162,13 @@ class YOLOv4(YOLO):
                [54,186, 69,268, 89,369],
                [126,491, 194,314, 278,520]]
 
-
+class YOLOv5(YOLO):
+    ENGINE_PATH = Path("/workspace/trtx-fastmot/tensorrtx/yolov5/build/yolov5s.engine")
+    PLUGIN_PATH = Path("/workspace/trtx-fastmot/tensorrtx/yolov5/build/libmyplugins.so")
+    NUM_CLASSES = 80
+    INPUT_SHAPE = (3, 640, 640)
+    LETTERBOX = True
+    NEW_COORDS = True
 """
 The following models are supported but not provided.
 Modify paths, # classes, input shape, and anchors according to your Darknet cfg for custom model.
@@ -227,8 +233,8 @@ class YOLOv4P6(YOLO):
 
 class YOLOv4Tiny(YOLO):
     ENGINE_PATH = Path(__file__).parent / 'yolov4-tiny.trt'
-    MODEL_PATH = Path(__file__).parent /  'yolov4-tiny.onnx'
-    NUM_CLASSES = 1
+    MODEL_PATH = Path(__file__).parent /  'yolov4-tiny-crowdhuman-416x416.onnx'
+    NUM_CLASSES = 2
     INPUT_SHAPE = (3, 416, 416)
     LAYER_FACTORS = [32, 16]
     SCALES = [1.05, 1.05]
