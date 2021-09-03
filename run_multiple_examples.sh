@@ -1,0 +1,9 @@
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
+gnome-terminal -- docker run --gpus all -it --rm -e DISPLAY=$DISPLAY --net=host -v $(pwd):/workspace -w /workspace/FastMOT umair:latest ./run_example.sh
