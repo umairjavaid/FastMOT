@@ -10,9 +10,8 @@ import cv2
 
 from . import models
 from .utils import TRTInference
-from .utils.rect import as_tlbr, aspect_ratio, to_tlbr, get_size, area
+from .utils.rect import as_tlbr, aspect_ratio, to_tlbr, to_tlbr_yolov5, to_tlwh, get_size, area
 from .utils.rect import enclosing, multi_crop, iom, diou_nms
-
 
 DET_DTYPE = np.dtype(
     [('tlbr', float, 4),
@@ -267,13 +266,17 @@ class YOLODetector(Detector):
         Detections with the same labels have consecutive indices.
         """
         det_out = self.backend.synchronize()
-        det_out = np.concatenate(det_out).reshape(-1, 7)
+        #det_out = np.concatenate(det_out).reshape(-1, 7)
+        num = int(det_out[0][0])
+        # Reshape to a two dimentional ndarray
+        det_out = np.reshape(det_out[0][1:], (-1, 6))[:num, :]
         detections = self._filter_dets(det_out, self.upscaled_sz, self.class_ids, self.conf_thresh,
                                        self.nms_thresh, self.max_area, self.min_aspect_ratio,
                                        self.bbox_offset)
         detections = np.fromiter(detections, DET_DTYPE, len(detections)).view(np.recarray)
         return detections
 
+    #native yolov4 preprocess provided by fast mot
     def _preprocess(self, frame):
         zoom = np.roll(self.inp_handle.shape, -1) / frame.shape
         with self.backend.stream:
@@ -316,13 +319,13 @@ class YOLODetector(Detector):
                  the order of [x, y, w, h, box_confidence, class_id, class_prob]
         """
         # drop detections with low score
-        scores = det_out[:, 4] * det_out[:, 6]
+        scores = det_out[:, 4] #* det_out[:, 6]
         keep = np.where(scores >= conf_thresh)
         det_out = det_out[keep]
 
         # scale to pixel values
-        det_out[:, :4] *= np.append(size, size)
-        det_out[:, :2] -= offset
+        #det_out[:, :4] *= np.append(size, size)
+        #det_out[:, :2] -= offset
 
         keep = []
         for class_id in class_ids:
@@ -332,16 +335,17 @@ class YOLODetector(Detector):
             keep.extend(class_idx[class_keep])
         keep = np.array(keep)
         nms_dets = det_out[keep]
-
+        
         detections = []
         for i in range(len(nms_dets)):
-            tlbr = to_tlbr(nms_dets[i, :4])
+            tlbr = to_tlbr_yolov5(nms_dets[i, :4])
             label = int(nms_dets[i, 5])
-            conf = nms_dets[i, 4] * nms_dets[i, 6]
+            conf = nms_dets[i, 4] #* nms_dets[i, 6]
             if 0 < area(tlbr) <= max_area and aspect_ratio(tlbr) >= min_ar:
+                #tlbr = tlbr[:,:2] - tlbr[:,:2]/2
                 detections.append((tlbr, label, conf))
-        return detections
 
+        return detections
 
 class PublicDetector(Detector):
     def __init__(self, size, frame_skip, sequence_path=None, conf_thresh=0.5, max_area=800000):
