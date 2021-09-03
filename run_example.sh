@@ -1,0 +1,1 @@
+python3 app.py -i /workspace/Adlytic_different_branches/DHA_MariaB.mp4 /workspace/Adlytic_different_branches/Emporium_MariaB.mp4 -m -s
