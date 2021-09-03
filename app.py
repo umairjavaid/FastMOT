@@ -11,13 +11,13 @@ import fastmot
 import fastmot.models
 from fastmot.utils import ConfigDecoder, Profiler
 
-
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     optional = parser._action_groups.pop()
     required = parser.add_argument_group('required arguments')
     group = parser.add_mutually_exclusive_group()
-    required.add_argument('-i', '--input-uri', metavar="URI", required=True, help=
+    #umairsedit -- add multiple inputs
+    required.add_argument('-i', '--input-uri', nargs='+', metavar="URI", required=True, help=
                           'URI to input stream\n'
                           '1) image sequence (e.g. %%06d.jpg)\n'
                           '2) video file (e.g. file.mp4)\n'
@@ -30,7 +30,7 @@ def main():
                           help='path to JSON configuration file')
     optional.add_argument('-l', '--labels', metavar="FILE",
                           help='path to label names (e.g. coco.names)')
-    optional.add_argument('-o', '--output-uri', metavar="URI",
+    optional.add_argument('-o', '--output-uri', nargs='+', metavar="URI",
                           help='URI to output video file')
     optional.add_argument('-t', '--txt', metavar="FILE",
                           help='path to output MOT Challenge format results (e.g. MOT20-01.txt)')
@@ -62,59 +62,89 @@ def main():
         with open(args.labels) as label_file:
             label_map = label_file.read().splitlines()
             fastmot.models.set_label_map(label_map)
+    
+    streams = []
+    for i in range(len(args.input_uri)):
+        stream = fastmot.VideoIO(config.resize_to, args.input_uri[i], args.output_uri, **vars(config.stream_cfg))
+        streams.append(stream)
 
-    stream = fastmot.VideoIO(config.resize_to, args.input_uri, args.output_uri, **vars(config.stream_cfg))
-
+    #stream = fastmot.VideoIO(config.resize_to, args.input_uri, args.output_uri, **vars(config.stream_cfg))
+    
     mot = None
     txt = None
     if args.mot:
         draw = args.show or args.output_uri is not None
-        mot = fastmot.MOT(config.resize_to, **vars(config.mot_cfg), draw=draw)
-        mot.reset(stream.cap_dt)
+        mot = fastmot.MOT(config.resize_to, **vars(config.mot_cfg), draw=draw, number_of_trackers=len(streams))
+        #mot.reset(stream.cap_dt)        
+        mot.reset(*streams)
+
     if args.txt is not None:
         Path(args.txt).parent.mkdir(parents=True, exist_ok=True)
         txt = open(args.txt, 'w')
     if args.show:
         cv2.namedWindow('Video', cv2.WINDOW_AUTOSIZE)
+        # for i in range(len(streams)):
+        #     window_title = "Video " + str(i)
+        #     cv2.namedWindow('Video', cv2.WINDOW_AUTOSIZE)
 
     logger.info('Starting video capture...')
-    stream.start_capture()
+    #stream.start_capture()
+    for i in streams:
+        i.start_capture()
+
     try:
         with Profiler('app') as prof:
             while not args.show or cv2.getWindowProperty('Video', 0) >= 0:
-                frame = stream.read()
-                if frame is None:
+                #frame = stream.read()
+                #running sequentially for now, we can use parrallelism for loading multiple streams
+                frames = []
+                check = 0
+                for i in streams:
+                    frame = i.read()
+                    frames.append(frame)
+                    if frame is None:
+                        check += 1
+
+                #check here if alls frames are none
+                if(check == len(streams)):
                     break
 
                 if args.mot:
-                    mot.step(frame)
-                    if txt is not None:
-                        for track in mot.visible_tracks():
-                            tl = track.tlbr[:2] / config.resize_to * stream.resolution
-                            br = track.tlbr[2:] / config.resize_to * stream.resolution
-                            w, h = br - tl + 1
-                            txt.write(f'{mot.frame_count},{track.trk_id},{tl[0]:.6f},{tl[1]:.6f},'
-                                      f'{w:.6f},{h:.6f},-1,-1,-1\n')
+                    #pass array as arguments
+                    mot.step(*frames)
+                    # if txt is not None:
+                    #     for i in mot.visible_tracks():
+                    #         for track in i:
+                    #             tl = track.tlbr[:2] / config.resize_to * stream.resolution
+                    #             br = track.tlbr[2:] / config.resize_to * stream.resolution
+                    #             w, h = br - tl + 1
+                    #             txt.write(f'{mot.frame_count},{track.trk_id},{tl[0]:.6f},{tl[1]:.6f},'
+                    #                     f'{w:.6f},{h:.6f},-1,-1,-1\n')
 
                 if args.show:
-                    cv2.imshow('Video', frame)
-                    if cv2.waitKey(1) & 0xFF == 27:
-                        break
-                if args.output_uri is not None:
-                    stream.write(frame)
+                    for i in range(len(frames)):
+                        window_title = "Video " + str(i)
+                        if frames[i] is not None:
+                            cv2.imshow(window_title, frames[i])                           
+                            if cv2.waitKey(1) & 0xFF == 27:
+                                break
+                # if args.output_uri is not None:
+                #     stream.write(frame)
     finally:
         # clean up resources
         if txt is not None:
             txt.close()
-        stream.release()
+        
+        for i in streams:
+            i.release()
+
         cv2.destroyAllWindows()
 
     # timing statistics
     if args.mot:
-        avg_fps = round(mot.frame_count / prof.duration)
+        avg_fps = round(sum(mot.frame_counts)/ prof.duration)
         logger.info('Average FPS: %d', avg_fps)
         mot.print_timing_info()
-
 
 if __name__ == '__main__':
     main()
